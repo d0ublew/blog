@@ -21,6 +21,8 @@
     - [Warmup](./writeups/wgmy2023/web/warmup/README.md)
     - [Status](./writeups/wgmy2023/web/status/README.md)
     - [Secret](./writeups/wgmy2023/web/secret/README.md)
+- [bi0sCTF 2024](./writeups/bi0s-2024/readme.md)
+    - [ezv8 revenge](./writeups/bi0s-2024/pwn/ezv8-revenge/readme.md)
 
 # Notes
 
@@ -29,3 +31,4 @@
     - [SMB Relay Attack](./notes/active-directory/smb-relay-attack/README.md)
 - [pwn]()
     - [File Stream Oriented Programming (FSOP)](./notes/pwn/fsop/readme.md)
+    - [V8 Internals 101](./notes/pwn/v8/readme.md)

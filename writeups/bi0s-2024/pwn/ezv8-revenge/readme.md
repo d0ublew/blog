@@ -16,6 +16,7 @@
 ## TL;DR
 
 - CVE-2020-6418 type confusion on V8 version 12.2.0 (27 Dec 2023)
+- Type confusion to memory corruption to OOB access
 - Hijack wasm instance's jump table starting address to jump into shellcode embedded inside JIT'd wasm code
 
 ## Patch Analysis
@@ -1068,6 +1069,7 @@ bi0sctf{w3ll_d3f1n1t3ly_4_sk1ll_i55u3_1f3738f8}
 
 ## References
 
+- <https://googleprojectzero.github.io/0days-in-the-wild/0day-RCAs/2020/CVE-2020-6418.html>
 - <https://starlabs.sg/blog/2022/12-deconstructing-and-exploiting-cve-2020-6418>
 - <https://medium.com/@numencyberlabs/use-wasm-to-bypass-latest-chrome-v8sbx-again-639c4c05b157>
 - <https://github.com/WebAssembly/wabt>
@@ -1082,6 +1084,8 @@ bi0sctf{w3ll_d3f1n1t3ly_4_sk1ll_i55u3_1f3738f8}
 - <https://blog.kylebot.net/2022/02/06/DiceCTF-2022-memory-hole/>
 - <https://mgp25.com/blog/2021/browser-exploitation/>
 - <https://faraz.faith/2019-12-13-starctf-oob-v8-indepth/>
+- <https://github.blog/2023-10-17-getting-rce-in-chrome-with-incomplete-object-initialization-in-the-maglev-compiler/>
+- <https://github.blog/2023-09-26-getting-rce-in-chrome-with-incorrect-side-effect-in-the-jit-compiler/>
 - <https://v8.github.io/api/head/>
 
 ## Appendix
