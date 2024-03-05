@@ -5,7 +5,10 @@
 > Attachment: [memorial-cabbage.tar.gz](https://raw.githubusercontent.com/d0UBleW/ctf/main/cake-ctf/pwn/memorial-cabbage/memorial-cabbage.tar.gz)<br>
 
 <div class="hidden">
-    keywords: CakeCTF 2023, pwn
+    <details>
+        <summary>Keywords</summary>
+        CakeCTF 2023, pwn
+    </details>
 </div>
 
 ## TL;DR

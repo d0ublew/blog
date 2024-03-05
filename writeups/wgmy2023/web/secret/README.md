@@ -1,7 +1,10 @@
 # Secret
 
 <div class="hidden">
-    keywords: Wargames.MY CTF 2023, web, k8s, HashiCorp Vault
+    <details>
+        <summary>Keywords</summary>
+        Wargames.MY CTF 2023, web, k8s, HashiCorp Vault
+    </details>
 </div>
 
 ## Series

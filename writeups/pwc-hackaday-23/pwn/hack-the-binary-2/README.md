@@ -2,7 +2,10 @@
 
 
 <div class="hidden">
-    keywords: PwC CTF: Hack A Day 2023 - Securing AI, pwn, format string, ROP
+    <details>
+        <summary>Keywords</summary>
+            PwC CTF: Hack A Day 2023 - Securing AI, pwn, format string, ROP
+    </details>
 </div>
 
 ## TL;DR

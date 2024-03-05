@@ -5,7 +5,10 @@
 > Attachment: [bofww.tar.gz](https://raw.githubusercontent.com/d0UBleW/ctf/main/cake-ctf/pwn/bofww/bofww.tar.gz)<br>
 
 <div class="hidden">
-    keywords: CakeCTF 2023, pwn, bof, cpp
+    <details>
+        <summary>Keywords</summary>
+        CakeCTF 2023, pwn, bof, cpp
+    </details>
 </div>
 
 ## TL;DR

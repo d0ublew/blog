@@ -1,7 +1,10 @@
 # V8 Internals 101
 
 <div class="hidden">
-    keywords: V8
+    <details>
+        <summary>Keywords</summary>
+          V8
+    </details>
 </div>
 
 To follow along, it is recommended to build `d8` with debug mode. Steps on how

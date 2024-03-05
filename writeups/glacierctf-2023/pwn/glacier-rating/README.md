@@ -5,7 +5,10 @@
 > Attachment: [glacie-rating.tar.gz](https://raw.githubusercontent.com/d0UBleW/ctf/main/glacier-23/pwn/glacier-rating/glacier-rating.tar.gz)<br>
 
 <div class="hidden">
-    keywords: GlacierCTF 2023, pwn, heap, cpp, tcache poisoning, double free, fastbin dup
+    <details>
+        <summary>Keywords</summary>
+            GlacierCTF 2023, pwn, heap, cpp, tcache poisoning, double free, fastbin dup
+    </details>
 </div>
 
 ## TL;DR

@@ -1,7 +1,10 @@
 # PHP Code Review 1
 
 <div class="hidden">
-    keywords: PwC CTF: Hack A Day 2023 - Securing AI, web, php
+    <details>
+        <summary>Keywords</summary>
+            PwC CTF: Hack A Day 2023 - Securing AI, web, php
+    </details>
 </div>
 
 ## TL;DR

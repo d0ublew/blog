@@ -5,7 +5,10 @@
 > Attachment: [ezv8revenge.tar.gz](https://raw.githubusercontent.com/d0UBleW/ctf/main/bi0s/pwn/ezv8-revenge/ezv8revenge.tar.gz)
 
 <div class="hidden">
-    keywords: bi0sCTF 2024, pwn, browser, V8, type confusion, V8 sandbox, wasm
+    <details>
+        <summary>Keywords</summary>
+        bi0sCTF 2024, pwn, browser, V8, type confusion, V8 sandbox, wasm
+    </details>
 </div>
 
 > [!TIP]

@@ -1,7 +1,10 @@
 # SMB Relay Attack
 
 <div class="hidden">
-    keywords: active directory, smb, NTLM relay
+    <details>
+        <summary>Keywords</summary>
+            active directory, smb, NTLM relay
+    </details>
 </div>
 
 ## Infrastructure

@@ -1,7 +1,10 @@
 # Warmup
 
 <div class="hidden">
-    keywords: Wargames.MY CTF 2023, web, php, RCE, LFI
+    <details>
+        <summary>Keywords</summary>
+        Wargames.MY CTF 2023, web, php, RCE, LFI
+    </details>
 </div>
 
 ## Series

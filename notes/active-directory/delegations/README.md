@@ -1,7 +1,10 @@
 # Kerberos Delegations
 
 <div class="hidden">
-    keywords: active directory, kerberos, privesc, rbcd
+    <details>
+        <summary>Keywords</summary>
+            active directory, kerberos, privesc, rbcd
+    </details>
 </div>
 
 ## Delegations

@@ -1,7 +1,10 @@
 # generic-rop-challenge
 
 <div class="hidden">
-    keywords: ARM64, aarch46, ROP, ret2csu
+    <details>
+        <summary>Keywords</summary>
+            ARM64, aarch46, ROP, ret2csu
+    </details>
 </div>
 
 > [!WARNING]

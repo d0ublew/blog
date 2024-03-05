@@ -1,7 +1,10 @@
 # File Stream Oriented Programming (FSOP)
 
 <div class="hidden">
-    keywords: fsop, pwn, aaw, aar, arbitrary address write, arbitrary address read, primitive
+    <details>
+        <summary>Keywords</summary>
+        fsop, pwn, aaw, aar, arbitrary address write, arbitrary address read, primitive
+    </details>
 </div>
 
 > [!NOTE]

@@ -1,7 +1,10 @@
 # Status
 
 <div class="hidden">
-    keywords: Wargames.MY CTF 2023, web, k8s, nginx, off-by-slash
+    <details>
+        <summary>Keywords</summary>
+        Wargames.MY CTF 2023, web, k8s, nginx, off-by-slash
+    </details>
 </div>
 
 > [!WARNING]
