@@ -10,6 +10,7 @@
 | [Glacier Rating](./glacierctf-2023/pwn/glacier-rating/) | GlacierCTF 2023 | heap, cpp, tcache poisoning, double free, fastbin dup | Double free into tcache poisoning |
 | [Hack The Binary 1](./pwc-hackaday-23/pwn/hack-the-binary-1/) | PwC CTF: Hack A Day 2023 - Securing AI | oob | Array OOB read |
 | [Hack The Binary 2](./pwc-hackaday-23/pwn/hack-the-binary-2/) | PwC CTF: Hack A Day 2023 - Securing AI | format string, ROP | Format string to defeat ASLR, ROP to get RCE |
+| [ezv8 revenge](./bi0s-2024/pwn/ezv8-revenge/) | bi0sCTF 2024 | bi0sCTF 2024, pwn, browser, V8, type confusion, V8 sandbox, wasm | CVE-2020-6418 on V8 version 12.2.0, shellcode exeuction via wasm instance object |
 
 ## web
 
