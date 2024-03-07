@@ -23,6 +23,8 @@
     - [Secret](./writeups/wgmy2023/web/secret/README.md)
 - [bi0sCTF 2024](./writeups/bi0s-2024/readme.md)
     - [ezv8 revenge](./writeups/bi0s-2024/pwn/ezv8-revenge/readme.md)
+- [osu!gaming CTF 2024](./writeups/osu-gaming-ctf-2024/readme.md)
+    - [osu-v8](./writeups/osu-gaming-ctf-2024/pwn/osu-v8/readme.md)
 
 # Notes
 

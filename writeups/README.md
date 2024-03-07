@@ -10,7 +10,8 @@
 | [Glacier Rating](./glacierctf-2023/pwn/glacier-rating/) | GlacierCTF 2023 | heap, cpp, tcache poisoning, double free, fastbin dup | Double free into tcache poisoning |
 | [Hack The Binary 1](./pwc-hackaday-23/pwn/hack-the-binary-1/) | PwC CTF: Hack A Day 2023 - Securing AI | oob | Array OOB read |
 | [Hack The Binary 2](./pwc-hackaday-23/pwn/hack-the-binary-2/) | PwC CTF: Hack A Day 2023 - Securing AI | format string, ROP | Format string to defeat ASLR, ROP to get RCE |
-| [ezv8 revenge](./bi0s-2024/pwn/ezv8-revenge/) | bi0sCTF 2024 | bi0sCTF 2024, pwn, browser, V8, type confusion, V8 sandbox, wasm | CVE-2020-6418 on V8 version 12.2.0, shellcode execution via wasm instance object |
+| [ezv8 revenge](./bi0s-2024/pwn/ezv8-revenge/) | bi0sCTF 2024 | pwn, browser, V8, type confusion, V8 sandbox, wasm | CVE-2020-6418 on V8 version 12.2.0 (970c2bf28ddb93dc17d22d83bd5cef3c85c5f6c5, 2023-12-27); shellcode execution via wasm instance object |
+| [osu-v8](./osu-gaming-ctf-2024/pwn/osu-v8/) | osu!gaming CTF 2024 | pwn, browser, V8, V8 garbage collection, UAF, V8 sandbox, wasm | CVE-2022-1310 on V8 version 12.2.0 (8cf17a14a78cc1276eb42e1b4bb699f705675530, 2024-01-04); UAF on `RegExp().lastIndex`; shellcode execution via wasm instance object |
 
 ## web
 
