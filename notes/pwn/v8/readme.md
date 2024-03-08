@@ -247,11 +247,85 @@ delete foo[1]       // foo transitions to HOLEY_DOUBLE_ELEMENTS
 
 Element kinds transition can be read on [this blog](https://v8.dev/blog/elements-kinds)
 
+## Garbage Collection
+
+```console
+./d8 --trace-gc --expose-gc
+d8> gc();  // major GC (mark and sweep)
+d8> gc({type:'minor'});  // minor GC (scavenge)
+```
+
+### Major GC
+
+- Covers the whole heap (`ReadOnlySpace`, `OldSpace`, `NewSpace`, etc.(?))
+- Marking is done from roots (typically variable on the most outer scope)
+
+```js
+var b = [{foo:'bar'}, 1.1, {leet:'1337'}]
+// b, {foo:'bar'}, and {leet:'1337'} lives in NewSpace
+// HeapNumber(1.1) lives in OldSpace
+gc();
+// b, {foo:'bar'}, and {leet:'1337'} moves to OldSpace
+// HeapNumber(1.1) lives in OldSpace
+```
+
+```js
+var b = [{foo:'bar'}, 1.1, {leet:'1337'}]
+delete b[0];
+// b and {leet:'1337'} lives in NewSpace
+// {foo:'bar'} still lives in NewSpace
+// HeapNumber(1.1) lives in OldSpace
+gc();
+// b and {leet:'1337'} moves to OldSpace
+// {foo:'bar'} is garbage collected
+// HeapNumber(1.1) still lives in OldSpace
+delete b[2];
+delete b[1];
+// {leet:'1337'} still lives in OldSpace
+// HeapNumber(1.1) still lives in OldSpace
+gc();
+// {leet:'1337'} is garbage collected
+// HeapNumber(1.1) still lives in OldSpace
+```
+
+### Minor GC
+
+- Only covers the `NewSpace`, specifically `From-Space` / `Nursery`, which is where objects are allocated to
+- First minor GC relocate reachable object from `From-Space/Nursery` to `To-Space/Intermediate`, then swap the labels between `From-Space/Nursery` and `To-Space/Intermediate`
+- Objects allocated after the first minor GC (let these objects be `y`) lives in the same space together with those that survives the first minor GC (let these objects be `x`)
+- The next minor GC, `x` objects that are still reachable are reallocated to `OldSpace`, and reachable `y` objects move to `To-Space/Intermediate`, then swap labels again
+- For subsequent minor GC, the same pattern follows
+
+```js
+var b = [{foo:'bar'}, 1.1, {leet:'1337'}]
+delete b[0];
+// b and {leet:'1337'} lives in NewSpace
+// {foo:'bar'} still lives in NewSpace
+// HeapNumber(1.1) lives in OldSpace
+gc({type:'minor'});
+var c = {idk:'new', kdi:'wen'}
+// b and {leet:'1337'} moves to To-Space (NewSpace)
+// {foo:'bar'} is garbage collected
+// HeapNumber(1.1) lives in OldSpace
+// c and its properties lives together with b and {leet:'1337'}
+delete b[2];
+// {leet:'1337'} is still around
+gc({type:'minor'});
+// {leet:'1337'} is garbage collected
+// b moves to OldSpace
+// c and its properties still lives in NewSpace
+gc({type:'minor'})
+// c and its properties moves to OldSpace
+```
+
+
 ## References
 
 - <https://v8.dev/blog/pointer-compression>
 - <https://v8.dev/blog/elements-kinds>
 - <https://jhalon.github.io/chrome-browser-exploitation-1/#object-representation>
+- <https://v8.dev/blog/concurrent-marking>
+- <https://v8.dev/blog/trash-talk>
 
 ## Appendix
 
