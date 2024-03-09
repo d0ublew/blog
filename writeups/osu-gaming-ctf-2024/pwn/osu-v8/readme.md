@@ -11,6 +11,9 @@
     </details>
 </div>
 
+> [!WARNING]
+> WORK IN PROGRESS
+
 > [!TIP]
 > Some lines of code may be hidden for brevity.
 >
@@ -220,11 +223,11 @@ Looking through the result, there are 4 places where it is invoked:
 
 - `src/regexp/regexp-utils.cc:205`: this is part of `RegExpUtils::SetAdvancedStringIndex` function
 
-    A little spoiler, this is the one we are aiming for. Let's see explore why this is the perfect match.
+    A little spoiler, this is the one we are aiming for. Let's see and explore why this is the perfect match.
 
 Looking into `RegExpUtils::SetAdvancedStringIndex`, we could see that:
 - old `lastIndex` property is retrieved
-- this old `lastIndex` is add with `1` and saved to `new_last_index`
+- this old `lastIndex` is added with `1` and saved to `new_last_index`
 - this `new_last_index` is then passed to `SetLastIndex`
 
 This is perfect as we have complete control over the old `lastIndex` field.
@@ -359,12 +362,12 @@ RUNTIME_FUNCTION(Runtime_RegExpReplaceRT) {
 ```
 
 Based on trial-and-error, the fast-path is never taken [0] but we can ensure it
-to be not taken by modifying our `RegExp` object prototype.
+to be never taken by modifying our `RegExp` object prototype.
 In order to get into `SetAdvancedStringIndex` [7], we need to first pass the
 `global` variable check [5]. This variable is retrieved from the `RegExp` object
-[1], which basically the flags modifier when instantiating the object. Before
+[1], which is basically the flags modifier when instantiating the object. Before
 `SetAdvancedStringIndex` is called, the prototype `exec` is first called [4],
-and it then checks if the result is not `NULL`. Since `global` is set to `true`,
+and then it checks if the result is not `NULL`. Since `global` is set to `true`,
 the loop does not break and it tries to get the element at index `0` then tries
 to convert the element to string. Finally, it checks if the matched string length
 is `0` [6], and if it is, `SetAdvancedStringIndex` is called. One thing to note
@@ -703,7 +706,7 @@ gef> tele 0x199c001c2148 10
 0x199c001c2190|+0x0048|+009: 0x4020333333333333
 ```
 
-TODO: create own major and minor gc
+TODO: create our own implementations to trigger major and minor gc
 
 ## Reference
 
