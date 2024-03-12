@@ -127,7 +127,7 @@ enum WriteBarrierMode {
 Using `SKIP_WRITE_BARRIER` makes sense when the `lastIndex` property is a small immediate integer (SMI).
 However, if we trace back to the previous lines of code, we could see that `value`
 goes through `NewNumberFromInt64`. Another thing to take note is that our `RegExp` object
-prototype should not be modified such that `HasInitialRegExpMap` returns true.
+property should not be modified such that `HasInitialRegExpMap` returns true.
 
 ```cpp
 MaybeHandle<Object> RegExpUtils::SetLastIndex(Isolate* isolate,
@@ -169,6 +169,7 @@ Handle<Object> FactoryBase<Impl>::NewNumberFromInt64(int64_t value) {
 Since SMI is 31-bit in size and covers positive and negative integers, the range is[^smi-range]:
 
 $$ [-2^{30}, 2^{30}-1] $$
+
 $$ [-1073741824, 1073741823] $$
 
 Now, let's take a look at the [vulnerability details](https://issues.chromium.org/action/issues/40059133/attachments/53188081?download=false)
@@ -211,11 +212,11 @@ Looking through the result, there are 4 places where it is invoked:
 
 - `src/runtime/runtime-regexp.cc:1425`: this is part of `RegExpReplace(Isolate, Handle, Handle, Handle)` function which is supposed to be called when executing `RegExp.prototype[Symbol.replace]`
 
-    When testing via GDB, I could not seem to get into this function. Moreover, there is a comment mentioning this is a legacy implementation. Perhaps that is the reason why this line of code is unreachable.
+    When testing via GDB, I could not seem to get into this function. Moreover, there is a comment mentioning this is a legacy implementation. Perhaps, that is the reason why this line of code is unreachable.
 
 - `src/runtime/runtime-regexp.cc:1725`: this is part of `Runtime_RegExpSplit` function which is called when executing [`RegExp.prototype[ @@split ]`](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/RegExp/@@split#examples)
 
-    This could potentially work but require much effort since the value is controlled by the length of the string to be split.
+    This could potentially work but require much effort since the value is controlled by the length of the string to be splitted.
 
 - `src/runtime/runtime-regexp.cc:1849`: this is part of `Runtime_RegExpReplaceRT` which is called when executing [`RegExp.prototype[ @@replace ]`](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/RegExp/@@replace#examples)
 
@@ -362,7 +363,7 @@ RUNTIME_FUNCTION(Runtime_RegExpReplaceRT) {
 ```
 
 Based on trial-and-error, the fast-path is never taken [0] but we can ensure it
-to be never taken by modifying our `RegExp` object prototype.
+to be never taken by modifying our `RegExp` object property.
 In order to get into `SetAdvancedStringIndex` [7], we need to first pass the
 `global` variable check [5]. This variable is retrieved from the `RegExp` object
 [1], which is basically the flags modifier when instantiating the object. Before
@@ -438,7 +439,7 @@ console.log(re.lastIndex);  // 1338 == 1337+1
 
 Finally, the final `re.lastIndex` is `1` more than `1337` which is to be expected
 but recall that to skip the write barrier, we need to pass `HasInitialRegExpMap`
-check which is only possible if we do not mess with our object prototype. One
+check which is only possible if we do not mess with our object property. One
 way to achieve this is to do `delete re.exec;` such that subsequent call to `re.exec`
 goes into `RegExp.prototype.exec`. However, doing so results in `re.lastIndex`
 no longer `1338` but `0`. Apparently, the original `RegExp.prototype.exec`
