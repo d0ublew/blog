@@ -11,9 +11,6 @@
     </details>
 </div>
 
-> [!WARNING]
-> WORK IN PROGRESS
-
 > [!TIP]
 > Some lines of code may be hidden for brevity.
 >
