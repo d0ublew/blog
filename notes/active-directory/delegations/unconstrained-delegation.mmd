@@ -8,8 +8,8 @@ DC->>User: KRB_AS_REP
 Note right of User: User obtains TGT
 User->>DC: KRB_TGS_REQ
 DC->>User: KRB_TGS_REP
-Note right of User: User obtains TGS for User to Service
-Note right of User: The TGS contains a copy of the User TGT
+Note right of User: User obtains ST for User to Service
+Note right of User: The ST contains a copy of the User TGT
 
 User->>Service: KRB_AP_REQ
 Note left of Service: Service obtains User's TGT
@@ -17,7 +17,7 @@ Service->>User: KRB_AP_REP
 
 Service->>DC: KRB_TGS_REQ (using User's TGT)
 DC->>Service: KRB_TGS_REP
-Note left of Service: Service obtains TGS for User to Resource
+Note left of Service: Service obtains ST for User to Resource
 
 Note right of Service: Authenticates as User
 Service->>Resource: KRB_AP_REQ
