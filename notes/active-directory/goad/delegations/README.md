@@ -1,0 +1,3 @@
+# Delegations
+
+[Kerberos Delegations](../../delegations/)
