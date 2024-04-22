@@ -25,6 +25,8 @@
     - [ezv8 revenge](./writeups/bi0s-2024/pwn/ezv8-revenge/readme.md)
 - [osu!gaming CTF 2024](./writeups/osu-gaming-ctf-2024/readme.md)
     - [osu-v8](./writeups/osu-gaming-ctf-2024/pwn/osu-v8/readme.md)
+- [b01lers CTF 2024](./writeups/b01lers-24/readme.md)
+    - [mixtpeailbc](./writeups/b01lers-24/pwn/mixtpeailbc/readme.md)
 
 # Notes
 
