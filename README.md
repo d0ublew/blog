@@ -40,6 +40,6 @@
         - [Delegations](./notes/active-directory/goad/delegations/README.md)
         - [Lateral Movement](./notes/active-directory/goad/lateral-movement/README.md)
         - [Privilege Escalation](./notes/active-directory/goad/privesc/README.md)
-- [pwn]()
+- [pwn](./notes/pwn/readme.md)
     - [File Stream Oriented Programming (FSOP)](./notes/pwn/fsop/readme.md)
     - [V8 Internals 101](./notes/pwn/v8/readme.md)
