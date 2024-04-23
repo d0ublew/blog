@@ -2,6 +2,10 @@
 
 Trying to learn pwn and reversing.
 
+# Resume
+
+[Download my resume here](https://github.com/d0UBleW/d0UBleW/raw/main/William-Wijaya-Resume.pdf)
+
 # Contact
 
 - [LinkedIn](https://www.linkedin.com/in/williamwijaya02)
