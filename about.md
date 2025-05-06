@@ -1,18 +1,20 @@
 # About
 
+## Brief
+
 Trying to learn pwn and reversing.
 
-# Resume
+## Resume
 
 [Download my resume here](https://github.com/d0UBleW/d0UBleW/raw/main/William-Wijaya-Resume.pdf)
 
-# Contact
+## Contact
 
 - [LinkedIn](https://www.linkedin.com/in/williamwijaya02)
 - [GitHub](https://github.com/d0UBleW)
 - [Email: d0ublew@duck.com](mailto:d0ublew@duck.com)
 
-# PGP Public Key
+## PGP Public Key
 
 ```text
 -----BEGIN PGP PUBLIC KEY BLOCK-----

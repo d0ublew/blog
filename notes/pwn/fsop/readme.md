@@ -9,7 +9,7 @@
 
 > [!NOTE]
 > Some lines of code are hidden for brevity.
-> 
+>
 > When hovering over the code block, press the eye button on the top right corner
 > to toggle the hidden lines.
 
