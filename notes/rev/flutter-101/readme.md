@@ -1,5 +1,8 @@
 # Notes
 
+> [!WARNING]
+> Work In Progress
+
 ## SMI
 
 - The integer `4` in dart is stored as `4 << 1 = 8` in memory
@@ -87,7 +90,7 @@ stp x0, x1, [x15]  ; push arg2, arg3
 
 ```sh
 r2> "/ad/a ldr.*, \[x27, 0x6990\]"
-r2> "/ad/ add.*, x27, lsl 12;0x6990\]"
+r2> "/ad/ add.*, x27, 0x6, lsl 12;0x990\]"
 ```
 
 ## Subroutine Prologue
@@ -173,7 +176,7 @@ add   x2, x2, x28, lsl 32  ; decompress pointer
 str   x2, [x15]            ; <== hook here, `this.context.x2.add(0xf).readPointer()`
 ```
 
-- Modified `blutter_frida.js` to print `Map` object in `List` format
+- Modified `blutter_frida.js` to print `Map` object
   ```js
   function getObjectValue(ptr, cls, depthLeft = MaxDepth) {
     switch (cls.id) {
@@ -215,8 +218,15 @@ str   x2, [x15]            ; <== hook here, `this.context.x2.add(0xf).readPointe
       // begin
       // add the following code
       case CidMap:
-        let [_, _cls, values] = getTaggedObjectValue(ptr.add(0x10).readPointer());
-        return values;
+          let [_, _cls, values] = getTaggedObjectValue(ptr.add(0x10).readPointer());
+          let _map = {};
+          for (let i = 0; i < values.length; i += 2) {
+              if (values[i] === null) {
+                  continue;
+              }
+              _map[values[i]] = values[i + 1];
+          }
+          return _map;
       // end
     }
 
@@ -342,6 +352,17 @@ _label_c:
 ### HMAC
 
 - Look for XOR operation with `0x5c` or `0x36`
+  ```sh
+  r2> "/ad/a mov.*, 0x(5c|36)$"
+  0x001fb8b0   # 4: mov x17, 0x36
+  0x001fb9e0   # 4: mov x17, 0x5c
+  0x0040c89c   # 4: mov x2, 0x5c
+  0x0040ca28   # 4: mov x2, 0x5c
+  0x0040cc08   # 4: mov x2, 0x5c
+  0x0041b274   # 4: mov x2, 0x36
+  0x0041b418   # 4: mov x3, 0x5c
+  ```
+
   ```armasm
       movz    x2, #0x36  ; <==
       stur    x4, [fp, #-0x10]
@@ -365,6 +386,7 @@ _label_c:
       ldr     x2, [fp, #0x10]
       eor     x0, x1, x2  ; <==
   ```
+- different hashing function generates different length of bytes, used this to make an educated guess of the hashing function
 
 ## Identifying Packages
 
