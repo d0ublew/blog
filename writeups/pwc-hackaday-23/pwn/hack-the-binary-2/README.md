@@ -90,10 +90,9 @@ Based on the result, the third entry is a libc address value.
 
 ![printf leak result](./img/1.png)
 
-{{< alert "circle-info" >}}
-One could also double check where is the libc memory region via `/proc/<pid>/maps`
-![proc maps](./img/2.png)
-{{< /alert >}}
+> [!NOTE]
+> One could also double check where is the libc memory region via `/proc/<pid>/maps`
+> ![proc maps](./img/2.png)
 
 Since the challenge does not come with a libc file, we could not directly compute
 the offset between the leaked address with the base address of libc. The local
