@@ -320,6 +320,17 @@ unsorted_bin[idx=0, size=any, @0x7f415e003b30]: fd=0x55573dde5310, bk=0x55573dde
 > [!NOTE]
 > Apparently, there is an alternative way utilizing scanf (<https://blog.quarkslab.com/heap-exploitation-glibc-internals-and-nifty-tricks.html#2.%20libc%20leak>)
 
+When we provide `scanf` with a huge input, it would allocate some memory on the heap
+and when `scanf` returns, this memory is freed and consolidated with the top chunk
+(wilderness), which triggers `malloc_consolidate` since the the freed chunk size
+(`scanf` allocated memory + top chunk size)[^7] exceeds the `FASTBIN_CONSOLIDATION_THRESHOLD`
+(`0x10000`)[^8]
+
+> [!NOTE]
+> TODO: Study <https://elixir.bootlin.com/glibc/glibc-2.39/source/malloc/malloc.c#L4880>
+> code path which is responsible for fastbin consolidation into unsorted bin
+> then small bin
+
 ```python
 io = start()
 
@@ -339,6 +350,9 @@ log.info(f"{libc_leak=:#x}")
 
 io.interactive()
 ```
+
+[^7]: <https://elixir.bootlin.com/glibc/glibc-2.39/source/malloc/malloc.c#L4756>
+[^8]: <https://elixir.bootlin.com/glibc/glibc-2.39/source/malloc/malloc.c#L4776>
 
 ## ROP
 
