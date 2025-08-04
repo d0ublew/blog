@@ -27,6 +27,8 @@
     - [osu-v8](./writeups/osu-gaming-ctf-2024/pwn/osu-v8/readme.md)
 - [b01lers CTF 2024](./writeups/b01lers-24/readme.md)
     - [mixtpeailbc](./writeups/b01lers-24/pwn/mixtpeailbc/readme.md)
+- [justCTF 2025](./writeups/justctf-2025/readme.md)
+    - [babyheap](./writeups/justctf-2025/pwn/babyheap/readme.md)
 
 # Notes
 
