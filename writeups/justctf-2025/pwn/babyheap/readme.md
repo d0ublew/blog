@@ -320,16 +320,23 @@ unsorted_bin[idx=0, size=any, @0x7f415e003b30]: fd=0x55573dde5310, bk=0x55573dde
 > [!NOTE]
 > Apparently, there is an alternative way utilizing scanf (<https://blog.quarkslab.com/heap-exploitation-glibc-internals-and-nifty-tricks.html#2.%20libc%20leak>)
 
-When we provide `scanf` with a huge input, it would allocate some memory on the heap
-and when `scanf` returns, this memory is freed and consolidated with the top chunk
-(wilderness), which triggers `malloc_consolidate` since the the freed chunk size
-(`scanf` allocated memory + top chunk size)[^7] exceeds the `FASTBIN_CONSOLIDATION_THRESHOLD`
-(`0x10000`)[^8]
+When we provide `scanf` with a huge input (> 0x400 bytes), it would call malloc
+(`__libc_scratch_buffer_grow_preserve+0x63`) and during this call `malloc_consolidate`
+is triggered[^9]. This particular code path is taken due to our input that is more
+than 0x400 bytes caused `scanf` to `malloc` 0x800, 0x1000, 0x2000, 0x4000, ...,
+bytes of memory which is larger than fastbin[^10] and small bin[^11] maximum capacity.
+
+This `malloc_consolidate` first consolidates fastbin chunk into unsorted bin,
+then process unsorted chunks and sort it into appropriate bins according to its size
+(small bin and large bin)[^12].
 
 > [!NOTE]
-> TODO: Study <https://elixir.bootlin.com/glibc/glibc-2.39/source/malloc/malloc.c#L4880>
-> code path which is responsible for fastbin consolidation into unsorted bin
-> then small bin
+> See [appendix](#malloc_consolidate-note) for further analysis on how
+> `malloc_consolidate` works under the hood
+
+
+> [!NOTE]
+> TODO: Study the sorting of unsorted chunks (<https://elixir.bootlin.com/glibc/glibc-2.39/source/malloc/malloc.c#L4070>)
 
 ```python
 io = start()
@@ -351,8 +358,12 @@ log.info(f"{libc_leak=:#x}")
 io.interactive()
 ```
 
-[^7]: <https://elixir.bootlin.com/glibc/glibc-2.39/source/malloc/malloc.c#L4756>
-[^8]: <https://elixir.bootlin.com/glibc/glibc-2.39/source/malloc/malloc.c#L4776>
+<!-- [^7]: <https://elixir.bootlin.com/glibc/glibc-2.39/source/malloc/malloc.c#L4756> -->
+<!-- [^8]: <https://elixir.bootlin.com/glibc/glibc-2.39/source/malloc/malloc.c#L4776> -->
+[^9]: <https://elixir.bootlin.com/glibc/glibc-2.39/source/malloc/malloc.c#L4041>
+[^10]: <https://elixir.bootlin.com/glibc/glibc-2.39/source/malloc/malloc.c#L3914>
+[^11]: <https://elixir.bootlin.com/glibc/glibc-2.39/source/malloc/malloc.c#L3977>
+[^12]: <https://elixir.bootlin.com/glibc/glibc-2.39/source/malloc/malloc.c#L4161>
 
 ## ROP
 
@@ -555,3 +566,76 @@ io.interactive()
 - <https://github.com/cloudburst/libheap/blob/master/heap.png>
 - <https://intranautic.com/posts/glibc-ptmalloc-internals/>
 - <https://blog.quarkslab.com/heap-exploitation-glibc-internals-and-nifty-tricks.html#2.%20libc%20leak>
+
+### `malloc_consolidate` Note
+
+If we expand `unsorted_chunks` macro and evaluate the expression, `unsorted_bin`
+is equal to `((char*)&(av->bins[0])) - 0x10`, which is equivalent to `&(av->top)`
+(see `malloc_state` struct for clarity[^99])
+
+```c
+// https://elixir.bootlin.com/glibc/glibc-2.39/source/malloc/malloc.c#L1523
+#define bin_at(m, i) \
+  (mbinptr) (((char *) &((m)->bins[((i) - 1) * 2]))			      \
+             - offsetof (struct malloc_chunk, fd))
+
+// https://elixir.bootlin.com/glibc/glibc-2.39/source/malloc/malloc.c#L1662
+#define unsorted_chunks(M)          (bin_at (M, 1))
+
+// https://elixir.bootlin.com/glibc/glibc-2.39/source/malloc/malloc.c#L4828
+unsorted_bin = unsorted_chunks(av)
+```
+
+The following code snippet is responsible for consolidating fastbin chunk into
+unsorted bin
+
+```c
+// https://elixir.bootlin.com/glibc/glibc-2.39/source/malloc/malloc.c#L4880
+
+// unsorted_bin points to &(av->top) and since it is casted to mchunkptr,
+// unsorted_bin->fd points to av->bin[0] and
+// unsorted_bin->bk poitns to av->bin[1]
+
+first_unsorted = unsorted_bin->fd
+unsorted_bin->fd = p  // set av->bin[0] to p
+first_unsorted->bk = p
+
+// ...
+
+p->bk = unsorted_bin
+p->fd = first_unsorted
+```
+
+For the case when the unsorted bin is empty, the following occurs:
+
+```c
+// unsorted_bin->fd points to &(av->top)
+// therefore, first_unsorted = &(av->top)
+av->bin[0] = p  // av->bin[0] is equivalent to unsortedbin_fd on gef and HeapLAB arena layout
+av->bin[1] = p  // av->bin[1] is equivalent to unsortedbin_bk on gef and HeapLAB arena layout
+
+// ...
+
+p->bk = &(av->top)
+p->fd = &(av->top)
+```
+
+On the subsequent iteration, the following occurs:
+
+```c
+// unsorted_bin->fd points to previously consolidated fastbin chunk
+// therefore, first_unsorted = last_p
+av->bin[0] = unsortedbin_fd = curr_p
+last_p->bk = curr_p
+
+// ...
+
+curr_p->bk = &(av->top)
+curr_p->fd = last_p
+```
+
+The following is a rough visualization on how the `fd` and `bk` change.
+
+![fastbin consolidation visualization](./assets/fastbin_consolidation.png)
+
+[^99]: <https://elixir.bootlin.com/glibc/glibc-2.39/source/malloc/malloc.c#L1812>
