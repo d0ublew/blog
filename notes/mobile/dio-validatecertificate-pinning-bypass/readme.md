@@ -10,7 +10,7 @@
 Have you ever wondered why your usual Flutter SSL Pinning bypass is not working
 on application built using [`dio`](https://github.com/cfug/dio/)? During one of
 my mobile penetration testing project, I was met with such application where the
-HTTPS requests were successfully sent to my proxy but the mobile application
+HTTPS requests were successfully sent to my proxy (using <https://github.com/NVISOsecurity/disable-flutter-tls-verification>) but the mobile application
 would throw error messages, stating something went wrong.
 
 ![dio badcertificate](./img/01-badcertificate.png)
@@ -665,3 +665,4 @@ app_flutter cache code_cache files libcrypto_1_1.so libcrypto_3.so libssl_1_1.so
 ### References
 
 - <https://github.com/KDAB/android_openssl>
+- <https://github.com/NVISOsecurity/disable-flutter-tls-verification>
