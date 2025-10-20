@@ -47,3 +47,5 @@
     - [V8 Internals 101](./notes/pwn/v8/readme.md)
 - [rev]()
     - [Flutter 101](./notes/rev/flutter-101/readme.md)
+- [mobile]()
+    - [Flutter Dio ValidateCertificate Pinning Bypass](./notes/mobile/dio-validatecertificate-pinning-bypass/readme.md)
