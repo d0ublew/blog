@@ -52,6 +52,9 @@ r2> "/ad/a movk .*, .*, lsl 48"
 Filter using radare2
 
 ```sh
+# find xref to 0x10008230 string (remember to add 0x20 on the address, 0x230 + 0x20 = 0x250)
+r2> "/ad/ add .*, .*, 0x250;sub .*, .*, 0x20;orr .*, .*, 0x8000000000000000"
+
 r2> "/ad/ sub .*, .*, 0x20;orr .*, .*, 0x8000000000000000"
 
 r2> "/ad/a movk .*, 0xd000, lsl 48"
